@@ -1,0 +1,184 @@
+---
+title: "India Road Accident Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(psych)
+library(ggplot2)
+library(dplyr)
+library(car)
+```
+
+## 📥 Load Dataset
+
+```{r}
+# Replace with your actual file path or use file.choose()
+
+india_road <- read.csv("C:/Users/HP/Desktop/Q1/T1/Prob and stats/Project/Road.csv")
+
+```
+
+## 📊 Descriptive Statistics
+
+```{r}
+summary(india_road)
+describe(india_road[, 1:ncol(india_road)])
+#Most variables are categorical (e.g., age band, vehicle type, light conditions).
+#Mean casualties ≈ 1.55, with up to 8 casualties in a single accident.
+#Distribution skew:
+#Sex_of_driver: skewed heavily toward one category (likely male).Road_allignment, Road_surface_type, and Weather_conditions: show extreme skewness and kurtosis, indicating very uneven category distributions like most accidents might occur on straight roads or in clear weather)
+```
+
+## 📈 Bar Plot: Accidents by Day
+
+```{r}
+accident_counts <- table(india_road$Day_of_week)
+barplot(accident_counts,
+        main = "Accidents by Day of the Week",
+        xlab = "Day",
+        ylab = "Number of Accidents",
+        col = "skyblue", las = 2)
+```
+
+## 🥧 Pie Chart: Accident Severity Distribution
+
+```{r}
+pie(table(india_road$Accident_severity), 
+    main = "Accident Severity", 
+    col = rainbow(length(unique(india_road$Accident_severity))))
+#Majority of accidents are Slight Injuries.Fatal Injuries are a small fraction. This indicates that while accidents are common, they’re not always severe
+
+```
+
+## 📅 Weekend Analysis
+
+```{r}
+weekend_days <- c("Saturday", "Sunday")
+india_road$Weekend <- india_road$Day_of_week %in% weekend_days
+
+# Probability of accident on weekend
+mean(india_road$Weekend)
+#25.4% of all accidents occur on weekends.While lower than 50%, still significant.
+```
+
+## 📊 Conditional Probability: Severity by Day
+
+```{r}
+prop.table(table(india_road$Accident_severity, india_road$Day_of_week), 2)
+#Fatal injuries spike on Saturday (2.2%) and Sunday (2.4%).Slight injuries dominate every day but proportionally decrease on weekends
+```
+
+## 🔍 t-test: Weekday vs Weekend Accidents
+
+```{r}
+day_counts <- table(india_road$Day_of_week)
+week_status <- names(day_counts) %in% weekend_days
+t.test(day_counts[week_status], day_counts[!week_status])
+#p-value = 0.16 → not statistically significant.Means: Weekend avg = 1566.5; Weekday avg = 1836.6.No strong evidence that accident count differs between weekdays and weekends
+# p is high so NULL will fly
+
+```
+
+## 🔁 Chi-square Test: Severity vs Day
+
+```{r}
+chisq.test(table(india_road$Accident_severity, india_road$Day_of_week))
+#Chi-sq = 47.20, p < 0.001.Strong association between day of week and accident severity.Supports earlier probability analysis on severity variation by day
+
+```
+
+## 🔬 ANOVA: Severity Across Time Period
+
+```{r}
+india_road$Hour <- as.numeric(substr(india_road$Time, 1, 2))
+india_road$Severity_numeric <- as.numeric(factor(india_road$Accident_severity))
+india_road$TimePeriod <- cut(india_road$Hour,
+                             breaks = c(-1, 6, 12, 18, 24),
+                             labels = c("Night", "Morning", "Afternoon", "Evening"))
+anova_result <- aov(Severity_numeric ~ TimePeriod, data = india_road)
+summary(anova_result)
+#p < 0.001, F = 14.98.Severity levels significantly differ by time periods (Morning, Afternoon, Night).
+```
+
+## 🧪 Kruskal-Wallis: Severity by Day (Non-parametric)
+
+```{r}
+kruskal.test(Severity_numeric ~ Day_of_week, data = india_road)
+#p = 0.0404.Confirms that accident severity varies by day even when normality is not assumed.
+```
+
+## 🔗 Correlation Matrix
+
+```{r}
+india_road$Day_numeric <- as.numeric(factor(india_road$Day_of_week, 
+                                            levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")))
+
+numeric_data <- india_road %>% 
+  mutate(Sex_numeric = as.numeric(factor(Sex_of_driver)),
+         Edu_numeric = as.numeric(factor(Educational_level)),
+         Exp_numeric = as.numeric(factor(Driving_experience)),
+         Light_numeric = as.numeric(factor(Light_conditions)),
+         Weather_numeric = as.numeric(factor(Weather_conditions)),
+         Cause_numeric = as.numeric(factor(Cause_of_accident)),
+         Area_numeric = as.numeric(factor(Area_accident_occured)),
+         Align_numeric = as.numeric(factor(Road_allignment))) %>%
+  select_if(is.numeric)
+
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+round(cor_matrix, 2)
+#Severity correlates weakly with all variables.no single variable strongly drives severity on its own
+
+```
+
+## 📦 Boxplot: Severity by Time Period
+
+```{r}
+ggplot(india_road, aes(x = TimePeriod, y = Severity_numeric)) +
+  geom_boxplot(fill = "orange", color = "black") +
+  labs(title = "Accident Severity by Time of Day", x = "Time Period", y = "Severity (numeric)")
+#Outliers in Nighttime suggest some very severe accidents.Median severity is higher in Evening and Night.
+```
+
+## 🔍 Logistic Regression: Predict Severe Accidents
+
+```{r}
+# Create numeric columns directly in india_road
+india_road$Sex_numeric <- as.numeric(factor(india_road$Sex_of_driver))
+india_road$Edu_numeric <- as.numeric(factor(india_road$Educational_level))
+india_road$Exp_numeric <- as.numeric(factor(india_road$Driving_experience))
+india_road$Light_numeric <- as.numeric(factor(india_road$Light_conditions))
+india_road$Weather_numeric <- as.numeric(factor(india_road$Weather_conditions))
+india_road$Area_numeric <- as.numeric(factor(india_road$Area_accident_occured))
+
+india_road$Severe <- ifelse(india_road$Accident_severity == "Fatal injury", 1, 0)
+logit_model <- glm(Severe ~ Day_numeric + Hour + Sex_numeric + Edu_numeric +
+                     Exp_numeric + Light_numeric + Weather_numeric + Area_numeric, 
+                   data = india_road, family = binomial)
+summary(logit_model)
+#Significant Predictors are Day_Numeric and Hour as they have very low p value and they have a higher chance of rejecting the null hypothesis.Personal/driver factors don’t significantly affect fatal injury likelihood.
+```
+
+## 🕓 Specific Hours Analysis
+
+```{r}
+hours_to_check <- c("0:04:00", "0:10:00", "0:18:00", "0:36:00", "0:56:00", 
+                    "1:12:00", "1:35:00", "10:01:00", "11:06:00", "11:08:00", 
+                    "11:16:00", "11:44:00", "12:04:00", "12:11:00", "12:14:00")
+
+india_road$Time_stripped <- substr(india_road$Time, 2, 8)
+subset_times <- india_road[india_road$Time_stripped %in% hours_to_check, ]
+table(subset_times$Accident_severity)
+#At low p-value time slots:2 Fatal, 21 Serious, 81 Slight Accidents.These windows are crucial for real-time intervention like patrols, cameras.
+```
+
+## 📊 Bar Plot: Severity at Specific Times
+
+```{r}
+barplot(table(subset_times$Accident_severity), 
+        main = "Severity at Low p-value Times", 
+        col = "tomato", ylab = "Count")
+#visualization confirms most cases at critical hours are Slight.the presence of Fatal and Serious suggests the need for alert systems even during low-volume windows.
+
+```
